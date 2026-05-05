@@ -77,6 +77,21 @@ type cursor struct {
 
 type parseState func(c rune)
 
+type Line struct {
+	l line
+}
+
+func (l *Line) Cell(x int) (ch rune, fg Color, bg Color) {
+	return l.l[x].c, l.l[x].fg, l.l[x].bg
+}
+
+func (l *Line) Len() int {
+	return len(l.l)
+}
+
+
+type HandleLine func(l Line)
+
 // State represents the terminal emulation state. Use Lock/Unlock
 // methods to synchronize data access with VT.
 type State struct {
@@ -98,6 +113,7 @@ type State struct {
 	numlock       bool
 	tabs          []bool
 	title         string
+	scrolled	HandleLine
 }
 
 func (t *State) logf(format string, args ...interface{}) {
@@ -167,6 +183,12 @@ func (t *State) ChangeMask() ChangeFlag {
 // Changed returns true if change has occured.
 func (t *State) Changed(change ChangeFlag) bool {
 	return t.changed&change != 0
+}
+
+// OnScroll sets a function that is called when a line is scrolled
+// off the top of the screen.
+func (t *State) OnScroll(f HandleLine)  {
+	t.scrolled = f
 }
 
 // resetChanges resets the change mask and dirtiness.
@@ -291,6 +313,11 @@ func (t *State) resize(cols, rows int) bool {
 	}
 	slide := t.cur.y - rows + 1
 	if slide > 0 {
+		if t.scrolled != nil {
+			for i := 0 ; i < slide; i++ {
+				t.scrolled(Line{t.lines[i]})
+			}
+		}
 		copy(t.lines, t.lines[slide:slide+rows])
 		copy(t.altLines, t.altLines[slide:slide+rows])
 	}
@@ -457,6 +484,11 @@ func (t *State) ScrollDown(orig, n int) {
 
 func (t *State) ScrollUp(orig, n int) {
 	n = clamp(n, 0, t.bottom-orig+1)
+	if t.scrolled != nil {
+		for i := orig; i <= orig+n-1; i++ {
+			t.scrolled(Line{t.lines[i]})
+		}
+	}
 	t.clear(0, orig, t.cols-1, orig+n-1)
 	t.changed |= ChangedScreen
 	for i := orig; i <= t.bottom-n; i++ {
