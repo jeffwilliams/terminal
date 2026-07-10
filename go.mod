@@ -1,4 +1,4 @@
-module github.com/micro-editor/terminal
+module github.com/jeffwilliams/terminal
 
 go 1.19
 
